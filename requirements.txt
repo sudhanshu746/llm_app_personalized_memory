@@ -1,0 +1,5 @@
+streamlit 
+openai
+memu-py
+python-dotenv
+pgvector
