@@ -107,7 +107,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 ### 2. Clone the Repository
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/sudhanshu746/llm_app_personalized_memory.git
 cd llm_app_personalized_memory
 ```
 
@@ -238,7 +238,7 @@ llm_app_personalized_memory/
 
 ## 📚 Resources
 
-- [MemU Documentation](https://github.com/memu-ai/memu)
+- [MemU Documentation](https://github.com/NevaMind-AI/memU)
 - [Anam AI Documentation](https://docs.anam.ai)
 - [OpenRouter Documentation](https://openrouter.ai/docs)
 - [Streamlit Documentation](https://docs.streamlit.io)
