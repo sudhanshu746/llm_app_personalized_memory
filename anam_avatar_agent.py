@@ -14,9 +14,16 @@ Features:
 import streamlit as st
 import os
 import requests
+import asyncio
+import tempfile
+import json
+import nest_asyncio
 from datetime import datetime
 from dotenv import load_dotenv
-from memu import MemuClient
+from memu.app import MemoryService
+
+# Allow nested event loops (required for MemoryService in Streamlit)
+nest_asyncio.apply()
 
 # Load environment variables
 load_dotenv()
@@ -79,16 +86,20 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-def get_memu_client():
-    """Initialize MemU client for memory storage."""
-    if "memu_client" not in st.session_state:
-        api_key = os.getenv("MEMU_API_KEY")
-        if not api_key:
-            st.error("❌ MEMU_API_KEY not found in environment variables.")
-            st.info("Please add MEMU_API_KEY to your .env file")
+def get_memu_service():
+    """Initialize MemU memory service for memory storage."""
+    if "memu_service" not in st.session_state:
+        openai_api_key = os.getenv("OPENAI_API_KEY")
+        if not openai_api_key:
+            st.error("❌ OPENAI_API_KEY not found in environment variables.")
+            st.info("Please add OPENAI_API_KEY to your .env file for MemU memory")
             return None
-        st.session_state.memu_client = MemuClient(api_key=api_key)
-    return st.session_state.memu_client
+        st.session_state.memu_service = MemoryService(
+            llm_profiles={"default": {"api_key": openai_api_key}},
+            database_config={"metadata_store": {"provider": "inmemory"}},
+            retrieve_config={"method": "rag"},
+        )
+    return st.session_state.memu_service
 
 
 def get_anam_session_token(persona_config: dict) -> str:
@@ -122,62 +133,79 @@ def get_anam_session_token(persona_config: dict) -> str:
         return None
 
 
-def save_conversation_to_memory(memu_client: MemuClient, messages: list):
+async def _save_conversation_async(memu_service: MemoryService, messages: list):
+    """Async helper to save conversation to MemU memory."""
+    conversation = {"messages": []}
+    for msg in messages:
+        conversation["messages"].append({
+            "role": msg["role"],
+            "content": msg["content"]
+        })
+    
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        json.dump(conversation, f)
+        temp_file = f.name
+    
+    try:
+        await memu_service.memorize(
+            resource_url=temp_file,
+            modality="conversation",
+            user={"user_id": "avatar_user"}
+        )
+    finally:
+        os.unlink(temp_file)
+
+
+def save_conversation_to_memory(memu_service: MemoryService, messages: list):
     """
     Save conversation history to MemU memory.
     
     Args:
-        memu_client: MemU client instance
+        memu_service: MemU service instance
         messages: List of conversation messages
     """
     if not messages or len(messages) < 2:
-        return
+        return False
     
     try:
-        # Format conversation for MemU
-        conversation = []
-        for msg in messages:
-            conversation.append({
-                "role": msg["role"],
-                "content": msg["content"],
-                "timestamp": msg.get("timestamp", datetime.now().isoformat())
-            })
-        
-        # Save to MemU
-        memu_client.memorize_conversation(
-            conversation=conversation,
-            user_name="User",
-            agent_name="Avatar Assistant"
-        )
+        asyncio.run(_save_conversation_async(memu_service, messages))
         return True
     except Exception as e:
         st.error(f"❌ Failed to save to memory: {e}")
         return False
 
 
-def get_memory_context(memu_client: MemuClient, query: str) -> str:
+async def _get_memory_context_async(memu_service: MemoryService, query: str) -> str:
+    """Async helper to retrieve memory context."""
+    queries = [{"role": "user", "content": {"text": query}}]
+    result = await memu_service.retrieve(queries=queries, where={"user_id": "avatar_user"})
+    
+    context_parts = []
+    for cat in result.get("categories", []):
+        summary = cat.get("summary", "")
+        if summary:
+            context_parts.append(f"- {summary}")
+    for item in result.get("items", []):
+        summary = item.get("summary", "")
+        if summary:
+            context_parts.append(f"- {summary}")
+    
+    return "\n".join(context_parts) if context_parts else ""
+
+
+def get_memory_context(memu_service: MemoryService, query: str) -> str:
     """
     Retrieve relevant memory context for a query.
     
     Args:
-        memu_client: MemU client instance
+        memu_service: MemU service instance
         query: User's query
         
     Returns:
         Memory context string
     """
     try:
-        # Search memory for relevant context
-        results = memu_client.search(query=query, limit=5)
-        if results:
-            context_parts = []
-            for item in results:
-                if isinstance(item, dict):
-                    context_parts.append(item.get("content", str(item)))
-                else:
-                    context_parts.append(str(item))
-            return "\n".join(context_parts)
-        return ""
+        return asyncio.run(_get_memory_context_async(memu_service, query))
     except Exception as e:
         st.warning(f"⚠️ Could not retrieve memory: {e}")
         return ""
@@ -390,10 +418,10 @@ Keep your responses conversational, concise, and engaging."""
         # API Key status
         st.header("🔑 API Status")
         anam_key = os.getenv("ANAM_API_KEY")
-        memu_key = os.getenv("MEMU_API_KEY")
+        openai_key = os.getenv("OPENAI_API_KEY")
         
         st.write("ANAM_API_KEY:", "✅ Set" if anam_key else "❌ Missing")
-        st.write("MEMU_API_KEY:", "✅ Set" if memu_key else "❌ Missing")
+        st.write("OPENAI_API_KEY:", "✅ Set" if openai_key else "❌ Missing")
     
     # Main content area
     col1, col2 = st.columns([2, 1])
@@ -420,10 +448,10 @@ Keep your responses conversational, concise, and engaging."""
                     # Get memory context if enabled
                     memory_context = ""
                     if enable_memory:
-                        memu_client = get_memu_client()
-                        if memu_client:
+                        memu_service = get_memu_service()
+                        if memu_service:
                             memory_context = get_memory_context(
-                                memu_client, 
+                                memu_service, 
                                 "general conversation context"
                             )
                     
@@ -458,18 +486,18 @@ Keep your responses conversational, concise, and engaging."""
                 # Save conversation button
                 if enable_memory:
                     if st.button("💾 Save Conversation to Memory"):
-                        memu_client = get_memu_client()
-                        if memu_client and "conversation_history" in st.session_state:
-                            if save_conversation_to_memory(memu_client, st.session_state.conversation_history):
+                        memu_service = get_memu_service()
+                        if memu_service and "conversation_history" in st.session_state:
+                            if save_conversation_to_memory(memu_service, st.session_state.conversation_history):
                                 st.success("✅ Conversation saved to MemU memory!")
     
     with col2:
         st.subheader("🧠 Memory Status")
         
         if enable_memory:
-            memu_client = get_memu_client()
+            memu_service = get_memu_service()
             
-            if memu_client:
+            if memu_service:
                 st.info("""
                 **MemU Memory Active**
                 

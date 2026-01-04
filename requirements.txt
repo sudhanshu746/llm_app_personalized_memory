@@ -3,3 +3,4 @@ openai
 memu-py
 python-dotenv
 pgvector
+nest-asyncio
