@@ -173,6 +173,7 @@ uv run streamlit run anam_avatar_agent.py
 
 ## 🏗️ Architecture
 
+
 ### MemU Local Memory Chatbot
 ```
 ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
@@ -192,6 +193,14 @@ uv run streamlit run anam_avatar_agent.py
        └───────────────────┘
 ```
 
+
+![alt text](assets/image.png)
+
+![alt text](assets/image-1.png)
+
+![alt text](assets/image-2.png)
+
+![alt text](assets/image-3.png)
 ---
 
 ## 📁 Project Structure
