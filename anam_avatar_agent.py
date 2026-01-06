@@ -376,7 +376,7 @@ async def main():
     """Main async application entry point."""
     
     # Header
-    st.markdown('<h1 class="main-header">🎭 Anam AI Avatar with MemU Memory</h1>', unsafe_allow_html=True)
+    st.markdown('<h1 class="main-header">🎭 AI Avatar with MemU Memory and Anam</h1>', unsafe_allow_html=True)
     st.markdown("""
     <p style="text-align: center; color: #666; font-size: 1.1rem;">
         Interactive AI Avatar powered by Anam AI with persistent memory via MemU
